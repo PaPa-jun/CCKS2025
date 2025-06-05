@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score, classification_report
 
 model_path = "bert-base-uncased"
 tokenizer_path = "bert-base-uncased"
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 encoder = BertModel.from_pretrained(model_path)
 tokenizer = BertTokenizer.from_pretrained(tokenizer_path)
@@ -27,13 +27,13 @@ val_dataloader = DataLoader(val_dataset, batch_size=32, shuffle=False)
 model = Classifier(encoder, num_classes=2).to(device)
 
 # Freeze encoder's weights
-for param in model.encoder.parameters():
-    param.requires_grad = False
+# for param in model.encoder.parameters():
+#     param.requires_grad = False
 
 optimizer = optim.Adam(model.parameters(), lr=3e-6)
 criterion = nn.CrossEntropyLoss()
 
-for epoch in range(3):
+for epoch in range(2):
     model.train()
     total_loss = 0.0
     for batch in train_dataloader:

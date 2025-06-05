@@ -51,13 +51,14 @@ class Classifier(nn.Module):
     def __init__(self, encoder, num_classes: int):
         super(Classifier, self).__init__()
         self.encoder = encoder
-        self.classifier = nn.Sequential(
-            nn.Linear(encoder.config.hidden_size, 512),
-            nn.LayerNorm(512),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, num_classes),
-        )
+        self.classifier = nn.Linear(encoder.config.hidden_size, num_classes)
+        # nn.Sequential(
+        #     nn.Linear(encoder.config.hidden_size, 512),
+        #     nn.LayerNorm(512),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.1),
+        #     nn.Linear(512, num_classes),
+        # )
 
     def forward(self, input_ids, attention_mask=None):
         features = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
