@@ -26,6 +26,7 @@
 
 DeTeCtive 是一种用于检测 AI 生成文本的新型框架，其核心思想是通过**多级对比学习**（Multi-Level Contrastive Learning）和**多任务辅助学习**（Multi-task Auxiliary Learning）来区分不同写作风格，而非传统的二分类（人类 vs. AI）。参考：[DeTeCtive: Detecting AI-generated Text via Multi-Level Contrastive Learning](https://arxiv.org/abs/2410.20964)。
 
+原论文中的 DeTeCtive 框架针对不同大模型生成的文本都做了不同力度的损失计算，而本次实验的数据集并不含具体的模型标签，仅有分类标签，因此我们不做不同粒度的损失计算，进考虑两部份损失：对比学习损失 + 分类损失。
 
 
 ## 代码架构
@@ -33,21 +34,18 @@ DeTeCtive 是一种用于检测 AI 生成文本的新型框架，其核心思想
 本仓库文件结构如下：
 ```
 .
-├── data                # 数据文件夹
-│   ├── test.jsonl      # 测试集
-│   └── train.jsonl     # 训练集
-├── finetune.py         # 在分类任务上微调预训练模型
-├── modules.py          # 类模块（模型定义）
-├── predict.py          # 对测试集进行预测并生成提交文件
-├── pretrain.py         # 利用 SimCES 微调预训练模型
-├── README.md
-├── utils.py            # 工具函数
-└── xgb.py              # 调用提升树分类器
+├── data                    # 数据集文件夹
+│   ├── test.jsonl          # 测试集
+│   └── train.jsonl         # 训练集
+├── modules.py              # 类模块定义
+├── predict.py              # 预测并生成提交文件
+├── README.md               # README
+├── train.py                # 训练代码
+└── utils.py                # 工具函数
 ```
-如果不利用 SimCES 架构，可修改 `fintune.py` 中的模型 `model_path` 和 `tokenizer_path` 为 huggingface 中的预训练模型路径模型路径如 `bert-base-uncased`。则会直接在分类任务上对 bert 进行微调。其他代码文件调用预训练模型方法同理。
 
 ## 实验日志
 
 - [6月3日] 从目前的实验结果来看，SimCES 框架效果并不好，直接微调 Bert 模型有过最好结果 83 分，另外使用 xgb 分类器效果也一般，下一步考虑使用微调 Bert + 集成学习分类器。
 - [6月5日] 目前来看，Bert + 集成学习是一条可行的路子，将 Bert + xgb 的结果提升到了 75 分，特征方面，改进的 `get_features` 能达到 77 分。
-- [6月6日] 直接调用 DeTeCtive 模型对 test 进行推理，F1 分数达到 80，下面考虑针对本次比赛数据集训练新的模型权重。
+- [6月6日] 直接调用 DeTeCtive 模型对 test 进行推理，F1 分数达到 80，下面考虑针对本次比赛数据集训练新的模型权重；参考 DeTeCtive 的正负样本对构造，重新实现对比学习框架并利用集成学习分类器成功将 F1 分数提升到 84.6 分！！！
