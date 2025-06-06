@@ -5,8 +5,10 @@ import pandas as pd
 def load_data(data_path: str, lines: bool = False):
     data_frame = pd.read_json(data_path, lines=lines)
     texts = data_frame["text"].tolist()
-    labels = data_frame["label"].tolist()
-    return texts, labels
+    if "label" in data_frame.columns:
+        labels = data_frame["label"].tolist()
+        return texts, labels
+    return texts
 
 
 def get_features(encoder, tokenizer, texts: list, batch_size: int = 32):

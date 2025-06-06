@@ -3,18 +3,18 @@ import xgboost as xgb
 import pandas as pd
 import numpy as np
 from utils import load_data, get_features
-from modules import Classifier
+from modules import DeTeCtiveClassifer
 from sklearn.model_selection import train_test_split
 from transformers import BertTokenizer, BertModel
 from sklearn.ensemble import StackingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 
 # 加载 BERT 模型和 tokenizer（保持原样）
-classifier = Classifier(BertModel.from_pretrained("bert-base-uncased"), 2).to("cuda")
-classifier.load_state_dict(torch.load("model.pth", map_location="cuda"))
-encoder = classifier.encoder
+classifier = DeTeCtiveClassifer("../bert-base-uncased", 2).to("cuda")
+classifier.load_state_dict(torch.load("DeTeCtive.pth", map_location="cuda"))
+encoder = classifier.get_encoder()
 # encoder = BertModel.from_pretrained("bert-base-uncased").to("cuda")
-tokenizer = BertTokenizer.from_pretrained("finetuned_tokenizer")
+tokenizer = BertTokenizer.from_pretrained("../bert-base-uncased")
 
 # 数据加载与特征提取（保持原样）
 texts, labels = load_data("data/train.jsonl", lines=True)
