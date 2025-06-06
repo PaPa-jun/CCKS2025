@@ -65,7 +65,7 @@ DeTeCtive 的设计目标是解决现有检测方法在面对新模型（如大�
 - **分类任务**：在编码器输出层添加一个 MLP 分类器，执行二分类（人类 vs. AI）。
 - **交叉熵损失**：定义分类损失函数：
 
-````math
+```math
   L_{\text{ce}} = -\frac{1}{N} \sum_{i=1}^N x_i \cdot \log(p_i) + (1 - x_i) \cdot \log(1 - p_i)
 ```
 
