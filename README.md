@@ -34,14 +34,15 @@ DeTeCtive 是一种用于检测 AI 生成文本的新型框架，其核心思想
 本仓库文件结构如下：
 ```
 .
-├── data                    # 数据集文件夹
-│   ├── test.jsonl          # 测试集
-│   └── train.jsonl         # 训练集
-├── modules.py              # 类模块定义
-├── predict.py              # 预测并生成提交文件
-├── README.md               # README
-├── train.py                # 训练代码
-└── utils.py                # 工具函数
+├── data                # 数据集文件夹
+│   ├── test.jsonl      # 测试集
+│   └── train.jsonl     # 训练集
+├── en_predict.py       # 集成学习预测脚本
+├── knn_predict.py      # KNN 预测脚本
+├── modules.py          # 类模块定义
+├── README.md
+├── train.py            # 训练脚本
+└── utils.py            # 工具函数
 ```
 
 ## 实验日志
