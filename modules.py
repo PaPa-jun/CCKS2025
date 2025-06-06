@@ -1,3 +1,4 @@
+import os, faiss, pickle
 import torch, torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -226,3 +227,92 @@ class DeTeCtiveSampler(Sampler):
 
     def __len__(self):
         return self.min_class_size * 2 // self.batch_size
+
+
+class Database:
+    """
+    Vector database.
+    """
+
+    def __init__(self, feature_dim: int, use_gpu: bool = False):
+        self.index = faiss.IndexFlatIP(feature_dim)
+        self.use_gpu = use_gpu
+        if self.use_gpu is True:
+            self.index = faiss.index_cpu_to_all_gpus(self.index)
+        self.index2db = []
+        self.label_dict = {}
+
+    def build_index(self, ids: list, features: np.ndarray, labels: list):
+        self._update_id_mapping(ids)
+        if not self.index.is_trained:
+            self.index.train(features)
+        self.index.add(features)
+        self.label_dict = {id: label for id, label in zip(self.index2db, labels)}
+        print(f"Total data indexed {self.index.ntotal}")
+
+    def save_db(self, save_path: str):
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
+        index_file_path = os.path.join(save_path, "index.faiss")
+        meta_file_path = os.path.join(save_path, "index_meta.faiss")
+        label_dict_path = os.path.join(save_path, "label_dic.pkl")
+        if self.use_gpu is True:
+            save_index = faiss.index_gpu_to_cpu(self.index)
+        else:
+            save_index = self.index
+        faiss.write_index(save_index, index_file_path)
+
+        with open(meta_file_path, "wb") as file:
+            pickle.dump(self.index2db, file)
+
+        with open(label_dict_path, "wb") as file:
+            pickle.dump(self.label_dict, file)
+
+        print("Database saved.")
+
+    def load_db(self, load_path: str):
+        index_file_path = os.path.join(load_path, "index.faiss")
+        meta_file_path = os.path.join(load_path, "index_meta.faiss")
+        label_dict_path = os.path.join(load_path, "label_dic.pkl")
+
+        self.index = faiss.read_index(index_file_path)
+        if self.use_gpu is True:
+            self.index = faiss.index_cpu_to_all_gpus(self.index)
+
+        with open(label_dict_path, "rb") as file:
+            self.label_dict = pickle.load(file)
+
+        with open(meta_file_path, "rb") as file:
+            self.index2db = pickle.load(file)
+        assert (
+            len(self.index2db) == self.index.ntotal
+        ), "index2db dosen't match index size."
+
+    def _update_id_mapping(self, db_ids: list):
+        self.index2db.extend(db_ids)
+
+    def knn_search(self, queries: np.ndarray, top_k: int):
+        """
+        Perform k-nearest neighbor search on the database.
+
+        :param queries (np.ndarray): Query vectors, shape (n_queries, feature_dim).
+        :param top_k (int): Number of nearest neighbors to return.
+        :return List[List[Dict[str, Union[int, float, Any]]]]: List of top_k nearest neighbors for each query.
+        """
+        distances, indices = self.index.search(queries, top_k)
+
+        results = []
+        for i in range(len(queries)):
+            query_result = []
+            for j in range(top_k):
+                idx = indices[i][j]
+                if idx == -1:
+                    continue  # Skip invalid index
+                original_id = self.index2db[idx]
+                label = self.label_dict.get(original_id, None)
+                query_result.append(
+                    {"id": original_id, "distance": float(distances[i][j]), "label": label}
+                )
+            results.append(query_result)
+        return results

@@ -2,8 +2,8 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from utils import load_data
-from modules import DeTeCtiveClassifer, DeTeCtiveDataset, DeTeCtiveSampler
+from utils import load_data, get_features
+from modules import DeTeCtiveClassifer, DeTeCtiveDataset, DeTeCtiveSampler, Database
 
 device = "cuda:0"
 
@@ -33,4 +33,11 @@ for epoch in range(3):
 
     print(f"Epoch {epoch + 1}, Loss: {total_loss / len(dataloader)}")
 
+
+encoder = model.get_encoder()
+ids, features = get_features(encoder, tokenizer, texts, 32, True)
+db = Database(features.shape[1], True)
+
+db.build_index(ids, features, labels)
+db.save_db("database")
 torch.save(model.state_dict(), "DeTeCtive.pth")

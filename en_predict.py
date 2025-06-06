@@ -18,7 +18,7 @@ tokenizer = BertTokenizer.from_pretrained("../bert-base-uncased")
 
 # 数据加载与特征提取（保持原样）
 texts, labels = load_data("data/train.jsonl", lines=True)
-X_train = get_features(encoder, tokenizer, texts, batch_size=32)
+_, X_train = get_features(encoder, tokenizer, texts, batch_size=32)
 y_train = np.array(labels)
 X_train, X_val, y_train, y_val = train_test_split(
     X_train, y_train, test_size=0.2, random_state=42
