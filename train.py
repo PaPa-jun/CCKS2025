@@ -3,15 +3,15 @@ import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
-from utils import load_data, generate_database
+from utils import load_data
 from modules import DeTeCtiveClassifer, DeTeCtiveDataset, DeTeCtiveSampler
 
-device = torch.device("cuda:0")
+device = torch.device("cuda:1")
 
 texts, labels = load_data("data/train.jsonl", lines=True, ratio=1.0)
-tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
-model = DeTeCtiveClassifer("bert-large-uncased", num_classes=2).to(device)
-dataset = DeTeCtiveDataset(texts, tokenizer, max_length=256, labels=labels)
+tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-large-cased")
+model = DeTeCtiveClassifer("google-bert/bert-large-cased", num_classes=2).to(device)
+dataset = DeTeCtiveDataset(texts, tokenizer, max_length=512, labels=labels)
 sampler = DeTeCtiveSampler(dataset, 32)
 dataloader = DataLoader(dataset, batch_sampler=sampler)
 
@@ -34,4 +34,4 @@ for epoch in range(3):
 
     print(f"Epoch {epoch + 1}, Loss: {total_loss / len(dataloader)}")
 
-torch.save(model.state_dict(), "DeTeCtive.pth")
+torch.save(model.state_dict(), "DeTeCtive_roberta.pth")

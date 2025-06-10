@@ -1,12 +1,9 @@
-import os, faiss, pickle
 import torch, torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data import Dataset, Sampler
 from typing import List
 from transformers import AutoModel
-from collections import Counter
-from sklearn.preprocessing import StandardScaler
 
 
 class TextEmbeddingModel(nn.Module):
@@ -21,21 +18,6 @@ class TextEmbeddingModel(nn.Module):
             output_hidden_states=True,
         )
 
-        # # 多层 [CLS] 拼接
-        # cls_embeddings = torch.cat(
-        #     [hidden[:, 0, :] for hidden in outputs.hidden_states[-4:]], dim=-1
-        # )
-
-        # # 平均池化与最大池化
-        # last_hidden = outputs.last_hidden_state
-        # mask = attention_mask.unsqueeze(-1).expand(last_hidden.size()).float()
-        # mean_pool = torch.sum(last_hidden * mask, dim=1) / torch.clamp(
-        #     mask.sum(dim=1), min=1e-9
-        # )
-        # max_pool, _ = torch.max(last_hidden * mask, dim=1)
-
-        # # 组合特征
-        # features = torch.cat((cls_embeddings, mean_pool, max_pool), dim=1)
         features = outputs.last_hidden_state[:, -1, :]
 
         return features
@@ -97,7 +79,7 @@ class DeTeCtiveClassifer(nn.Module):
         self.epsilon = torch.tensor(1e-6)
 
     def criterion(self, querys: torch.Tensor, labels: torch.Tensor):
-        querys = F.normalize(querys, dim=1)
+        querys = F.normalize(querys, dim=-1)
         similarity_matrix = torch.mm(querys, querys.t()) / self.temperature
 
         positive_mask = (labels.view(-1, 1) == labels.view(1, -1)) * (

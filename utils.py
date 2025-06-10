@@ -2,7 +2,7 @@ import torch, random
 import pandas as pd
 import torch.nn.functional as F
 from tqdm import tqdm
-from modules import Database, TextEmbeddingModel
+from modules import TextEmbeddingModel
 from collections import Counter, defaultdict
 
 
@@ -23,7 +23,6 @@ def get_features(
     encoder: TextEmbeddingModel,
     tokenizer,
     batch_size: int = 32,
-    normalize: bool = False,
 ):
     all_features = []
     for index in tqdm(range(0, len(texts), batch_size), desc="Get features: "):
@@ -43,25 +42,7 @@ def get_features(
 
         all_features.append(features.cpu())
     all_features = torch.cat(all_features, dim=0)
-    if normalize is True:
-        all_features = F.normalize(all_features, dim=1)
-    ids = [id for id in range(all_features.shape[0])]
-    return ids, all_features.numpy()
-
-
-def generate_database(
-    texts: list,
-    labels: list,
-    encoder: TextEmbeddingModel,
-    tokenizer,
-    save_path: str = "database",
-    use_gpu: bool = False,
-):
-    ids, features = get_features(texts, encoder, tokenizer, 16, normalize=True)
-    database = Database(features.shape[1], use_gpu)
-    database.build_index(ids, features, labels)
-    database.save_db(save_path)
-    return database
+    return all_features.numpy()
 
 
 def uniform_sample(texts: list, labels: list, ratio: float):

@@ -1,61 +1,67 @@
 import torch
-import xgboost as xgb
 import numpy as np
 from utils import load_data, get_features
 from modules import DeTeCtiveClassifer
 from transformers import AutoTokenizer
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 from sklearn.ensemble import BaggingClassifier
 from sklearn.metrics import f1_score
 
 # ================== 1. 加载 BERT 特征提取器 ==================
-# 加载预训练模型和 tokenizer
-classifier = DeTeCtiveClassifer("bert-large-uncased", 2).to("cuda:1")
-classifier.load_state_dict(torch.load("DeTeCtive.pth", map_location="cuda:1"))
+classifier = DeTeCtiveClassifer("FacebookAI/roberta-large", 2).to("cuda:0")
+classifier.load_state_dict(torch.load("DeTeCtive_roberta.pth", map_location="cuda:0"))
 encoder = classifier.get_encoder()
-tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
+tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-large")
 
 # ================== 2. 数据加载与特征提取 ==================
-# 加载训练数据并提取 BERT 特征
 texts, labels = load_data("data/train.jsonl", lines=True)
-_, X_train = get_features(texts, encoder, tokenizer, batch_size=32)
+X_train = get_features(texts, encoder, tokenizer, batch_size=32)
 y_train = np.array(labels)
 
-# 划分训练集和验证集
+# 划分训练集和验证集（添加类别平衡）
 X_train, X_val, y_train, y_val = train_test_split(
-    X_train, y_train, test_size=0.2, random_state=42
+    X_train, y_train, 
+    test_size=0.2, 
+    random_state=42,
+    stratify=y_train  # 保持类别分布 [[6]]
 )
 
 # ================== 3. 构建 KNN + Bagging 模型 ==================
-# 1. 创建 KNN 分类器
+# 新增 PCA 降维（缓解高维特征问题）[[7]]
 knn_base = make_pipeline(
     StandardScaler(),
-    KNeighborsClassifier(metric="cosine", algorithm="brute")
+    PCA(n_components=0.95),  # 保留 95% 方差 [[7]]
+    KNeighborsClassifier(
+        algorithm="auto",      # 自动选择最优算法（如 KDTree）[[8]]
+        metric="cosine"   # 更适合降维后空间
+    )
 )
 
-# 2. 构建 Bagging 集成模型
+# Bagging 集成模型（简化参数范围）
 bagging_knn = BaggingClassifier(
     estimator=knn_base,
-    n_jobs=1,
-    random_state=42
+    random_state=42,
+    n_jobs=-1  # 并行加速 [[1]]
 )
 
 param_grid = {
-    'estimator__kneighborsclassifier__n_neighbors': [3, 5, 7],
-    'estimator__kneighborsclassifier__weights': ['uniform', 'distance'],
-    'n_estimators': [5, 7, 9, 15],
-    'max_samples': [0.7, 0.8, 0.9],
-    'max_features': [0.7, 0.8, 0.9],
+    'estimator__kneighborsclassifier__n_neighbors': [3, 5],  # 缩小 K 值范围 [[3]]
+    'estimator__kneighborsclassifier__weights': ['distance'], # 固定权重 [[6]]
+    'n_estimators': [10, 15],  # 增加基模型数量 [[1]]
+    'max_samples': [0.8],      # 固定样本比例 [[1]]
+    'max_features': [0.8],     # 固定特征比例 [[1]]
 }
 
+# 使用 StratifiedKFold（保持类别分布）[[6]]
 grid_search = GridSearchCV(
     estimator=bagging_knn,
     param_grid=param_grid,
     scoring='f1',
-    cv=5,
+    cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),  # 统一交叉验证 [[1]]
     n_jobs=-1,
     verbose=3
 )
@@ -72,11 +78,9 @@ y_pred = best_model.predict(X_val)
 print("验证集 F1 Score:", f1_score(y_val, y_pred))
 
 # ================== 5. 测试集预测 ==================
-# 加载测试集并提取特征
 texts_test = load_data("data/test.jsonl", lines=True)
-_, X_test = get_features(texts_test, encoder, tokenizer, batch_size=32)
+X_test = get_features(texts_test, encoder, tokenizer, batch_size=32)
 
-# 生成预测并保存结果
 predictions = best_model.predict(X_test)
 with open("submit_bagging_knn.txt", "w") as f:
     for pred in predictions:
