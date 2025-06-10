@@ -45,7 +45,6 @@ knn_base = make_pipeline(
 bagging_knn = BaggingClassifier(
     estimator=knn_base,
     random_state=42,
-    n_jobs=-1  # 并行加速 [[1]]
 )
 
 param_grid = {
