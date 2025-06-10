@@ -1,72 +1,82 @@
-import torch
+import torch, random
 import pandas as pd
 import torch.nn.functional as F
-from collections import Counter
+from tqdm import tqdm
+from modules import Database, TextEmbeddingModel
+from collections import Counter, defaultdict
 
 
-def load_data(data_path: str, lines: bool = False):
+def load_data(data_path: str, lines: bool = False, ratio: float = 1.0):
     data_frame = pd.read_json(data_path, lines=lines)
     texts = data_frame["text"].tolist()
     if "label" in data_frame.columns:
         labels = data_frame["label"].tolist()
-        return texts, labels
+        sampled_texts, sampled_labels = uniform_sample(texts, labels, ratio)
+        print(f"Train dataset loaded. Size: {len(sampled_texts)}")
+        return sampled_texts, sampled_labels
+    print(f"Test dataset loaded. Size: {len(texts)}")
     return texts
 
 
-def get_features(encoder, tokenizer, texts: list, batch_size: int = 32, normalize: bool = False):
+def get_features(
+    texts: list,
+    encoder: TextEmbeddingModel,
+    tokenizer,
+    batch_size: int = 32,
+    normalize: bool = False,
+):
     all_features = []
-    for i in range(0, len(texts), batch_size):
-        batch_texts = texts[i : i + batch_size]
+    for index in tqdm(range(0, len(texts), batch_size), desc="Get features: "):
+        batch_texts = texts[index : index + batch_size]
         inputs = tokenizer(
             batch_texts,
             truncation=True,
             padding="max_length",
             max_length=512,
             return_tensors="pt",
-        ).to(encoder.device)
+        ).to(encoder.model.device)
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
 
         with torch.no_grad():
-            outputs = encoder(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_hidden_states=True,
-            )
+            features = encoder(input_ids, attention_mask)
 
-        # 多层 [CLS] 拼接
-        cls_embeddings = torch.cat(
-            [hidden[:, 0, :] for hidden in outputs.hidden_states[-4:]], dim=-1
-        )
+        all_features.append(features.cpu())
+    all_features = torch.cat(all_features, dim=0)
+    if normalize is True:
+        all_features = F.normalize(all_features, dim=1)
+    ids = [id for id in range(all_features.shape[0])]
+    return ids, all_features.numpy()
 
-        # 平均池化与最大池化
-        last_hidden = outputs.last_hidden_state
-        mask = attention_mask.unsqueeze(-1).expand(last_hidden.size()).float()
-        mean_pool = torch.sum(last_hidden * mask, dim=1) / torch.clamp(
-            mask.sum(dim=1), min=1e-9
-        )
-        max_pool, _ = torch.max(last_hidden * mask, dim=1)
 
-        # 组合特征
-        combined = torch.cat((cls_embeddings, mean_pool, max_pool), dim=1)
-        all_features.append(combined.cpu())
+def generate_database(
+    texts: list,
+    labels: list,
+    encoder: TextEmbeddingModel,
+    tokenizer,
+    save_path: str = "database",
+    use_gpu: bool = False,
+):
+    ids, features = get_features(texts, encoder, tokenizer, 16, normalize=True)
+    database = Database(features.shape[1], use_gpu)
+    database.build_index(ids, features, labels)
+    database.save_db(save_path)
+    return database
 
-    if normalize is not True:
-        features = torch.cat(all_features, dim=0).numpy()
-    else:
-        features = F.normalize(torch.cat(all_features, dim=0), dim=1).numpy()
-    ids = [id for id in range(features.shape[0])]
 
-    return ids, features
+def uniform_sample(texts: list, labels: list, ratio: float):
+    label_to_indices = defaultdict(list)
+    for idx, label in enumerate(labels):
+        label_to_indices[label].append(idx)
 
-def knn_predict(knn_results):
-    predictions = []
-    for query_neighbors in knn_results:
-        labels = [neighbor['label'] for neighbor in query_neighbors]
-        
-        label_counts = Counter(labels)
-        most_common_label = label_counts.most_common(1)[0][0]
-        
-        predictions.append(most_common_label)
-    
-    return predictions
+    sampled_indices = []
+
+    for label, indices in label_to_indices.items():
+        sample_size = round(len(indices) * ratio)
+        if sample_size > 0:
+            sampled_indices.extend(random.sample(indices, sample_size))
+
+    texts_sampled = [texts[i] for i in sampled_indices]
+    labels_sampled = [labels[i] for i in sampled_indices]
+
+    return texts_sampled, labels_sampled
