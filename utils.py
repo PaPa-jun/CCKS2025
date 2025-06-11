@@ -1,9 +1,8 @@
 import torch, random
 import pandas as pd
-import torch.nn.functional as F
 from tqdm import tqdm
 from modules import TextEmbeddingModel
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 
 def load_data(data_path: str, lines: bool = False, ratio: float = 1.0):

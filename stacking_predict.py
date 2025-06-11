@@ -14,10 +14,12 @@ from sklearn.metrics import f1_score
 from sklearn.neighbors import KNeighborsClassifier
 
 # ================== 1. 加载 BERT 特征提取器 ==================
-classifier = DeTeCtiveClassifer("google-bert/bert-large-cased", 2).to("cuda:0")
-classifier.load_state_dict(torch.load("DeTeCtive_cased.pth", map_location="cuda:0"))
+classifier = DeTeCtiveClassifer("../models/bert-base-uncased", 2).to("cuda:0")
+classifier.load_state_dict(
+    torch.load("DeTeCtive_base_uncased.pth", map_location="cuda:0")
+)
 encoder = classifier.get_encoder()
-tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-large-cased")
+tokenizer = AutoTokenizer.from_pretrained("../models/bert-base-uncased")
 
 # ================== 2. 数据加载与特征提取 ==================
 texts, labels = load_data("data/train.jsonl", lines=True)
@@ -39,13 +41,13 @@ xgb_params = {
     "max_depth": [5, 7],
     "learning_rate": [0.01, 0.05],
     "subsample": [0.8],
-    "colsample_bytree": [0.7, 0.8],  # 新增特征采样率
-    "gamma": [0, 0.1],               # 新增节点分裂最小损失减少值
-    "reg_alpha": [0.1, 1.0],         # L1 正则化
-    "reg_lambda": [0.1, 1.0],        # L2 正则化
+    "colsample_bytree": [0.7, 0.8],
+    "gamma": [0, 0.1],
+    "reg_alpha": [0.1, 1.0],
+    "reg_lambda": [0.1, 1.0],
 }
 xgb_grid = GridSearchCV(
-    estimator=xgb.XGBClassifier(eval_metric="logloss", use_label_encoder=False),
+    estimator=xgb.XGBClassifier(eval_metric="logloss"),
     param_grid=xgb_params,
     scoring="f1",
     cv=cv_strategy,
@@ -53,9 +55,9 @@ xgb_grid = GridSearchCV(
     verbose=3,
 )
 print("Start training XGBoost Model.")
-xgb_grid.fit(X_train, y_train, 
-             eval_set=[(X_val, y_val)], 
-             early_stopping_rounds=10)  # 添加早停机制 [[4]]
+xgb_grid.fit(
+    X_train, y_train, eval_set=[(X_val, y_val)]
+)
 best_xgb = xgb_grid.best_estimator_
 
 # ---- (2) 随机森林调参 ----
@@ -80,7 +82,9 @@ sgd_params = {
     "sgdclassifier__learning_rate": ["optimal"],
 }
 sgd_grid = GridSearchCV(
-    estimator=make_pipeline(StandardScaler(), SGDClassifier(random_state=42, max_iter=1000, tol=1e-3)),
+    estimator=make_pipeline(
+        StandardScaler(), SGDClassifier(random_state=42, max_iter=1000, tol=1e-3)
+    ),
     param_grid=sgd_params,
     scoring="f1",
     cv=cv_strategy,
@@ -93,7 +97,7 @@ best_sgd = sgd_grid.best_estimator_
 
 # ---- (4) KNN 调参（新增 PCA 降维）----
 knn_params = {
-    "pca__n_components": [0.9, 0.95],  # 保留 90% 或 95% 的方差 [[6]]
+    "pca__n_components": [0.9, 0.95],
     "kneighborsclassifier__n_neighbors": [3, 5],
     "kneighborsclassifier__weights": ["distance", "uniform"],
     "kneighborsclassifier__metric": ["cosine"],
@@ -101,7 +105,7 @@ knn_params = {
 knn_grid = GridSearchCV(
     estimator=make_pipeline(
         StandardScaler(),
-        PCA(),  # 新增 PCA 降维
+        PCA(),
         KNeighborsClassifier(algorithm="auto"),
     ),
     param_grid=knn_params,
@@ -128,7 +132,7 @@ final_estimator = GridSearchCV(
 model = StackingClassifier(
     estimators=estimators,
     final_estimator=final_estimator,
-    cv=StratifiedKFold(n_splits=5),  # 统一交叉验证策略 [[2]]
+    cv=cv_strategy,
     n_jobs=-1,
     stack_method="auto",
 )

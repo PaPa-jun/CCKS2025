@@ -12,10 +12,10 @@ from sklearn.ensemble import BaggingClassifier
 from sklearn.metrics import f1_score
 
 # ================== 1. 加载 BERT 特征提取器 ==================
-classifier = DeTeCtiveClassifer("FacebookAI/roberta-large", 2).to("cuda:0")
-classifier.load_state_dict(torch.load("DeTeCtive_roberta.pth", map_location="cuda:0"))
+classifier = DeTeCtiveClassifer("/root/autodl-tmp/models/bert-base-uncased", 2).to("cuda:0")
+classifier.load_state_dict(torch.load("DeTeCtive_base_uncased.pth", map_location="cuda:0"))
 encoder = classifier.get_encoder()
-tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-large")
+tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/models/bert-base-uncased")
 
 # ================== 2. 数据加载与特征提取 ==================
 texts, labels = load_data("data/train.jsonl", lines=True)
@@ -24,21 +24,14 @@ y_train = np.array(labels)
 
 # 划分训练集和验证集（添加类别平衡）
 X_train, X_val, y_train, y_val = train_test_split(
-    X_train, y_train, 
-    test_size=0.2, 
-    random_state=42,
-    stratify=y_train  # 保持类别分布 [[6]]
+    X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
 )
 
 # ================== 3. 构建 KNN + Bagging 模型 ==================
-# 新增 PCA 降维（缓解高维特征问题）[[7]]
 knn_base = make_pipeline(
     StandardScaler(),
-    PCA(n_components=0.95),  # 保留 95% 方差 [[7]]
-    KNeighborsClassifier(
-        algorithm="auto",      # 自动选择最优算法（如 KDTree）[[8]]
-        metric="cosine"   # 更适合降维后空间
-    )
+    PCA(n_components=0.95),
+    KNeighborsClassifier(algorithm="auto", metric="cosine"),
 )
 
 # Bagging 集成模型（简化参数范围）
@@ -48,21 +41,20 @@ bagging_knn = BaggingClassifier(
 )
 
 param_grid = {
-    'estimator__kneighborsclassifier__n_neighbors': [3, 5],  # 缩小 K 值范围 [[3]]
-    'estimator__kneighborsclassifier__weights': ['distance'], # 固定权重 [[6]]
-    'n_estimators': [10, 15],  # 增加基模型数量 [[1]]
-    'max_samples': [0.8],      # 固定样本比例 [[1]]
-    'max_features': [0.8],     # 固定特征比例 [[1]]
+    "estimator__kneighborsclassifier__n_neighbors": [3, 5, 7, 10],
+    "estimator__kneighborsclassifier__weights": ["distance", "uniform"],
+    "n_estimators": [10, 15],
+    "max_samples": [0.8],
+    "max_features": [0.8],
 }
 
-# 使用 StratifiedKFold（保持类别分布）[[6]]
 grid_search = GridSearchCV(
     estimator=bagging_knn,
     param_grid=param_grid,
-    scoring='f1',
-    cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),  # 统一交叉验证 [[1]]
+    scoring="f1",
+    cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
     n_jobs=-1,
-    verbose=3
+    verbose=3,
 )
 
 # ================== 4. 训练与评估 ==================

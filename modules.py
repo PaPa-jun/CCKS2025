@@ -1,9 +1,10 @@
 import torch, torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
+import random
 from torch.utils.data import Dataset, Sampler
 from typing import List
 from transformers import AutoModel
+from collections import defaultdict
 
 
 class TextEmbeddingModel(nn.Module):
@@ -62,9 +63,9 @@ class DeTeCtiveClassifer(nn.Module):
         encoder_name: str,
         num_classes: int,
         hidden_dim: int = 512,
-        alpha: float = 0.5,
-        beta: float = 0.5,
-        temperature: float = 0.05,
+        alpha: float = 1.0,
+        beta: float = 1.0,
+        temperature: float = 0.07,
     ):
         super(DeTeCtiveClassifer, self).__init__()
         self.encoder = TextEmbeddingModel(encoder_name)
@@ -73,9 +74,9 @@ class DeTeCtiveClassifer(nn.Module):
             output_dim=num_classes,
             hidden_dim=hidden_dim,
         )
-        self.alpha = nn.Parameter(torch.tensor(alpha), requires_grad=True)
-        self.beta = nn.Parameter(torch.tensor(beta), requires_grad=True)
-        self.temperature = nn.Parameter(torch.tensor(temperature), requires_grad=True)
+        self.alpha = nn.Parameter(torch.tensor(alpha), requires_grad=False)
+        self.beta = nn.Parameter(torch.tensor(beta), requires_grad=False)
+        self.temperature = nn.Parameter(torch.tensor(temperature), requires_grad=False)
         self.epsilon = torch.tensor(1e-6)
 
     def criterion(self, querys: torch.Tensor, labels: torch.Tensor):
@@ -176,33 +177,31 @@ class DeTeCtiveDataset(Dataset):
         }
 
 
-class DeTeCtiveSampler(Sampler):
-    def __init__(self, dataset: Dataset, batch_size: int = 32):
-        super(DeTeCtiveSampler, self).__init__()
+class BalancedClassSampler(Sampler):
+    def __init__(self, dataset, shuffle=True):
         self.dataset = dataset
-        self.batch_size = batch_size
-        self.class_indices = {0: [], 1: []}
-
+        self.class_indices = defaultdict(list)
         for idx, label in enumerate(dataset.labels):
-            self.class_indices[
-                label.item() if isinstance(label, torch.Tensor) else label
-            ].append(idx)
-
-        self.class_counts = {k: len(v) for k, v in self.class_indices.items()}
-        self.min_class_size = min(self.class_counts.values())
+            self.class_indices[label].append(idx)
+        
+        self.classes = list(self.class_indices.keys())
+        self.num_classes = len(self.classes)
+        self.shuffle = shuffle
+        self.min_samples = min(len(indices) for indices in self.class_indices.values())
 
     def __iter__(self):
-        indices_class0 = np.random.permutation(self.class_indices[0])
-        indices_class1 = np.random.permutation(self.class_indices[1])
-        samples_per_class = self.batch_size // 2
-
-        for i in range(len(self)):
-            start0, end0 = i * samples_per_class, (i + 1) * samples_per_class
-            start1, end1 = start0, end0
-            batch_indices = []
-            batch_indices.extend(indices_class0[start0:end0])
-            batch_indices.extend(indices_class1[start1:end1])
-            yield batch_indices
+        # 为每个类生成打乱后的索引列表
+        indices = [list(self.class_indices[cls]) for cls in self.classes]
+        if self.shuffle:
+            for idx_list in indices:
+                random.shuffle(idx_list)
+        
+        # 按样本位置遍历，确保每个类取相同数量的样本
+        for i in range(self.min_samples):
+            batch = []
+            for cls_idx in range(self.num_classes):
+                batch.append(indices[cls_idx][i])
+            yield batch
 
     def __len__(self):
-        return self.min_class_size * 2 // self.batch_size
+        return self.min_samples * self.num_classes

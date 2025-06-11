@@ -4,34 +4,45 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from utils import load_data
-from modules import DeTeCtiveClassifer, DeTeCtiveDataset, DeTeCtiveSampler
+from modules import DeTeCtiveClassifer, DeTeCtiveDataset
+from lightning import Fabric
 
-device = torch.device("cuda:1")
+torch.set_float32_matmul_precision("medium")
+fabric = Fabric(
+    accelerator="cuda", devices=3, strategy="ddp_find_unused_parameters_true"
+)
+fabric.launch()
+
+tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/models/bert-base-uncased")
+model = DeTeCtiveClassifer("/root/autodl-tmp/models/bert-base-uncased", num_classes=2)
+optimizer = optim.AdamW(model.parameters(), lr=5e-6)
+model, optimizer = fabric.setup(model, optimizer)
 
 texts, labels = load_data("data/train.jsonl", lines=True, ratio=1.0)
-tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-large-cased")
-model = DeTeCtiveClassifer("google-bert/bert-large-cased", num_classes=2).to(device)
 dataset = DeTeCtiveDataset(texts, tokenizer, max_length=512, labels=labels)
-sampler = DeTeCtiveSampler(dataset, 32)
-dataloader = DataLoader(dataset, batch_sampler=sampler)
+dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
+dataloader = fabric.setup_dataloaders(dataloader)
 
-optimizer = optim.AdamW(model.parameters(), lr=3e-5)
-
-for epoch in range(3):
+for epoch in range(10):
     model.train()
     total_loss = 0.0
-    for batch in tqdm(dataloader, desc=f"Epoch: {epoch + 1}"):
+    for batch in tqdm(dataloader, desc=f"Epoch: {epoch + 1}", disable=(fabric.global_rank != 0)):
         inputs = {
-            "input_ids": batch["input_ids"].to(device),
-            "attention_mask": batch["attention_mask"].to(device),
-            "labels": batch["labels"].to(device),
+            "input_ids": batch["input_ids"],
+            "attention_mask": batch["attention_mask"],
+            "labels": batch["labels"],
         }
         optimizer.zero_grad()
         loss, logits = model(**inputs)
-        loss.backward()
+        fabric.backward(loss)
         optimizer.step()
-        total_loss += loss.item()
+        total_loss += fabric.all_reduce(loss.item(), reduce_op="sum")
 
-    print(f"Epoch {epoch + 1}, Loss: {total_loss / len(dataloader)}")
+    fabric.print(f"Epoch {epoch + 1}, Loss: {total_loss / len(dataloader)}")
+    torch.cuda.empty_cache()
+    fabric.barrier()
 
-torch.save(model.state_dict(), "DeTeCtive_roberta.pth")
+
+if fabric.global_rank == 0:
+    torch.save(model.state_dict(), "DeTeCtive_base_uncased.pth")
+fabric.barrier()
