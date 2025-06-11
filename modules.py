@@ -20,7 +20,6 @@ class TextEmbeddingModel(nn.Module):
         )
 
         features = outputs.last_hidden_state[:, -1, :]
-
         return features
 
 

@@ -44,8 +44,8 @@ param_grid = {
     "estimator__kneighborsclassifier__n_neighbors": [3, 5, 7, 10],
     "estimator__kneighborsclassifier__weights": ["distance", "uniform"],
     "n_estimators": [10, 15],
-    "max_samples": [0.8],
-    "max_features": [0.8],
+    "max_samples": [0.6, 0.7, 0.8],
+    "max_features": [0.6, 0.7, 0.8],
 }
 
 grid_search = GridSearchCV(
@@ -73,6 +73,6 @@ texts_test = load_data("data/test.jsonl", lines=True)
 X_test = get_features(texts_test, encoder, tokenizer, batch_size=32)
 
 predictions = best_model.predict(X_test)
-with open("submit_bagging_knn.txt", "w") as f:
+with open("submit_knn.txt", "w") as f:
     for pred in predictions:
         f.write(f"{pred}\n")
