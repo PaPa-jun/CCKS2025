@@ -1,10 +1,9 @@
 import torch, torch.nn as nn
 import torch.nn.functional as F
 import random
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset
 from typing import List
 from transformers import AutoModel
-from collections import defaultdict
 
 
 class TextEmbeddingModel(nn.Module):
@@ -174,33 +173,3 @@ class DeTeCtiveDataset(Dataset):
             "input_ids": encoding["input_ids"].flatten(),
             "attention_mask": encoding["attention_mask"].flatten(),
         }
-
-
-class BalancedClassSampler(Sampler):
-    def __init__(self, dataset, shuffle=True):
-        self.dataset = dataset
-        self.class_indices = defaultdict(list)
-        for idx, label in enumerate(dataset.labels):
-            self.class_indices[label].append(idx)
-        
-        self.classes = list(self.class_indices.keys())
-        self.num_classes = len(self.classes)
-        self.shuffle = shuffle
-        self.min_samples = min(len(indices) for indices in self.class_indices.values())
-
-    def __iter__(self):
-        # 为每个类生成打乱后的索引列表
-        indices = [list(self.class_indices[cls]) for cls in self.classes]
-        if self.shuffle:
-            for idx_list in indices:
-                random.shuffle(idx_list)
-        
-        # 按样本位置遍历，确保每个类取相同数量的样本
-        for i in range(self.min_samples):
-            batch = []
-            for cls_idx in range(self.num_classes):
-                batch.append(indices[cls_idx][i])
-            yield batch
-
-    def __len__(self):
-        return self.min_samples * self.num_classes

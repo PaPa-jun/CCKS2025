@@ -26,7 +26,7 @@ optimizer = optim.AdamW(model.parameters(), lr=5e-5)
 model, optimizer = fabric.setup(model, optimizer)
 fabric.barrier()
 
-texts, labels = load_data("data/train.jsonl", lines=True, ratio=1.0)
+texts, labels = load_data("data/train.jsonl", lines=True, ratio=0.1)
 dataset = DeTeCtiveDataset(texts, tokenizer, max_length=512, labels=labels)
 sampler = DistributedSampler(dataset, fabric.world_size, fabric.global_rank)
 dataloader = DataLoader(dataset, batch_size=16, sampler=sampler)
