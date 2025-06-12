@@ -6,8 +6,6 @@ from transformers import AutoModel
 from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize, sent_tokenize
 
-nltk.download("punkt", quiet=True)
-
 
 class TextEmbeddingModel(nn.Module):
     def __init__(self, model_name: str, tfidf_vectorizer: TfidfVectorizer):

@@ -23,10 +23,8 @@ texts, _ = load_data("data/train.jsonl", lines=True)
 tfidf_vectorizer = TfidfVectorizer(max_features=512)
 tfidf_vectorizer.fit(texts)
 
-tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/models/bert-large-uncased")
-model = DeTeCtiveClassifer(
-    "/root/autodl-tmp/models/bert-large-uncased", tfidf_vectorizer, 2
-).to("cuda:0")
+tokenizer = AutoTokenizer.from_pretrained("../bert-large-uncased")
+model = DeTeCtiveClassifer("../bert-large-uncased", tfidf_vectorizer, 2).to("cuda:0")
 model.load_state_dict(torch.load("DeTeCtive_large_uncased.pth", map_location="cuda:0"))
 encoder = model.get_encoder()
 
