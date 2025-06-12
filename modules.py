@@ -1,24 +1,51 @@
 import torch, torch.nn as nn
 import torch.nn.functional as F
-import random
 from torch.utils.data import Dataset
 from typing import List
 from transformers import AutoModel
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 class TextEmbeddingModel(nn.Module):
-    def __init__(self, model_name: str):
+    def __init__(
+        self, model_name: str, tfidf_vectorizer: TfidfVectorizer, beta: float = 0.5
+    ):
         super(TextEmbeddingModel, self).__init__()
         self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+        self.tfidf_vectorizer = tfidf_vectorizer
+        self.hidden_size = self.model.config.hidden_size + len(
+            self.tfidf_vectorizer.get_feature_names_out()
+        )
+        self.beta = nn.Parameter(torch.tensor(beta), requires_grad=True)
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, raw_texts: list
+    ):
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
 
-        features = outputs.last_hidden_state[:, -1, :]
+        cls_vector = outputs.last_hidden_state[:, 0, :]
+
+        attention_mask_expanded = attention_mask.unsqueeze(-1).expand(
+            outputs.last_hidden_state.size()
+        )
+        mean_pooling = torch.sum(
+            outputs.last_hidden_state * attention_mask_expanded, dim=1
+        ) / torch.clamp(attention_mask_expanded.sum(dim=1), min=1e-9)
+        beta = torch.sigmoid(self.beta)
+        bert = beta * cls_vector + (1 - beta) * mean_pooling
+
+        tfidf = torch.tensor(
+            self.tfidf_vectorizer.transform(raw_texts).toarray(),
+            dtype=torch.float32,
+            device=bert.device,
+        )
+
+        features = torch.cat([bert, tfidf], dim=-1)
+
         return features
 
 
@@ -59,21 +86,21 @@ class DeTeCtiveClassifer(nn.Module):
     def __init__(
         self,
         encoder_name: str,
+        tfidf_vectorizer,
         num_classes: int,
         hidden_dim: int = 512,
-        alpha: float = 1.0,
-        beta: float = 1.0,
+        alpha: float = 0.5,
+        beta: float = 0.5,
         temperature: float = 0.07,
     ):
         super(DeTeCtiveClassifer, self).__init__()
-        self.encoder = TextEmbeddingModel(encoder_name)
+        self.encoder = TextEmbeddingModel(encoder_name, tfidf_vectorizer, beta)
         self.classifier = ClassificationHead(
-            input_dim=self.encoder.model.config.hidden_size,
+            input_dim=self.encoder.hidden_size,
             output_dim=num_classes,
             hidden_dim=hidden_dim,
         )
         self.alpha = nn.Parameter(torch.tensor(alpha), requires_grad=False)
-        self.beta = nn.Parameter(torch.tensor(beta), requires_grad=False)
         self.temperature = nn.Parameter(torch.tensor(temperature), requires_grad=False)
         self.epsilon = torch.tensor(1e-6)
 
@@ -98,7 +125,7 @@ class DeTeCtiveClassifer(nn.Module):
                     ).unsqueeze(1),
                     negative_score,
                 ),
-                dim=1,
+                dim=-1,
             ),
             torch.zeros(labels.shape[0], dtype=torch.long, device=querys.device),
         )
@@ -106,7 +133,9 @@ class DeTeCtiveClassifer(nn.Module):
         logits = self.classifier(querys)
         classification_loss = F.cross_entropy(logits, labels)
 
-        return self.alpha * constructive_loss + self.beta * classification_loss, logits
+        alpha = torch.sigmoid(self.alpha)
+
+        return alpha * constructive_loss + (1 - alpha) * classification_loss, logits
 
     def get_encoder(self):
         """
@@ -118,6 +147,7 @@ class DeTeCtiveClassifer(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
+        raw_texts: list,
         attention_mask: torch.Tensor,
         labels: torch.Tensor = None,
     ):
@@ -128,7 +158,9 @@ class DeTeCtiveClassifer(nn.Module):
         :param labels: Labels for classification, optional
         :return: If labels are provided, returns loss and logits; otherwise, returns logits.
         """
-        querys = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        querys = self.encoder(
+            input_ids=input_ids, attention_mask=attention_mask, raw_texts=raw_texts
+        )
         if labels is not None:
             loss, logits = self.criterion(querys, labels)
             return loss, logits
@@ -166,10 +198,12 @@ class DeTeCtiveDataset(Dataset):
         if labels is not None:
             return {
                 "input_ids": encoding["input_ids"].flatten(),
+                "raw_texts": texts,
                 "attention_mask": encoding["attention_mask"].flatten(),
                 "labels": torch.tensor(labels, dtype=torch.long),
             }
         return {
             "input_ids": encoding["input_ids"].flatten(),
+            "raw_texts": texts,
             "attention_mask": encoding["attention_mask"].flatten(),
         }

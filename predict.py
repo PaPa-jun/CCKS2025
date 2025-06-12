@@ -14,17 +14,20 @@ from sklearn.ensemble import StackingClassifier
 from sklearn.metrics import classification_report
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
 
 # ================== 1. 加载 BERT 特征提取器 ==================
-model = DeTeCtiveClassifer("bert-large-uncased", 2).to("cuda:0")
+texts, labels = load_data("data/train.jsonl", lines=True, ratio=0.01)
+tfidf_vectorizer = TfidfVectorizer(max_features=512)
+tfidf_vectorizer.fit(texts)
+tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
+model = DeTeCtiveClassifer("bert-large-uncased", tfidf_vectorizer, 2).to("cuda:0")
 model.load_state_dict(torch.load("DeTeCtive_large_uncased.pth", map_location="cuda:0"))
 encoder = model.get_encoder()
-tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
 
-# ================== 2. 数据加载与特征提取 ==================
-texts, labels = load_data("data/train.jsonl", lines=True, ratio=0.01)
+# ================== 2. 特征提取 ==================
 X_train = get_features(texts, encoder, tokenizer, batch_size=32)
 torch.cuda.empty_cache()
 y_train = np.array(labels)
@@ -130,7 +133,10 @@ stacking_model = StackingClassifier(
 )
 
 # 对元模型进行简单调参
-meta_params = {"final_estimator__C": [0.1, 1.0, 10.0], "final_estimator__penalty": ["l2"]}
+meta_params = {
+    "final_estimator__C": [0.1, 1.0, 10.0],
+    "final_estimator__penalty": ["l2"],
+}
 
 grid_search_stacking = GridSearchCV(
     estimator=stacking_model,

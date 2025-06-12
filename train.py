@@ -6,6 +6,7 @@ from transformers import AutoTokenizer
 from utils import load_data
 from modules import DeTeCtiveClassifer, DeTeCtiveDataset
 from lightning import Fabric
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 torch.set_float32_matmul_precision("medium")
 fabric = Fabric(
@@ -20,20 +21,24 @@ fabric.barrier()
 fabric.seed_everything(125)
 fabric.barrier()
 
+texts, labels = load_data("data/train.jsonl", lines=True, ratio=1.0)
+tfidf_vectorizer = TfidfVectorizer(max_features=512)
+tfidf_vectorizer.fit(texts)
+fabric.barrier()
+
 tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
-model = DeTeCtiveClassifer("bert-large-uncased", num_classes=2)
+model = DeTeCtiveClassifer("bert-large-uncased", tfidf_vectorizer, num_classes=2)
 optimizer = optim.AdamW(model.parameters(), lr=5e-5)
 model, optimizer = fabric.setup(model, optimizer)
 fabric.barrier()
 
-texts, labels = load_data("data/train.jsonl", lines=True, ratio=0.1)
 dataset = DeTeCtiveDataset(texts, tokenizer, max_length=512, labels=labels)
 sampler = DistributedSampler(dataset, fabric.world_size, fabric.global_rank)
 dataloader = DataLoader(dataset, batch_size=16, sampler=sampler)
 dataloader = fabric.setup_dataloaders(dataloader)
 fabric.barrier()
 
-for epoch in range(10):
+for epoch in range(5):
     model.train()
     total_loss = 0.0
     for batch in tqdm(
@@ -41,6 +46,7 @@ for epoch in range(10):
     ):
         inputs = {
             "input_ids": batch["input_ids"],
+            "raw_texts": batch["raw_texts"],
             "attention_mask": batch["attention_mask"],
             "labels": batch["labels"],
         }

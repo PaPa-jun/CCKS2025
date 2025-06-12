@@ -37,7 +37,7 @@ def get_features(
         attention_mask = inputs["attention_mask"]
 
         with torch.no_grad():
-            features = encoder(input_ids, attention_mask)
+            features = encoder(input_ids, attention_mask, batch_texts)
 
         all_features.append(features.cpu())
     all_features = torch.cat(all_features, dim=0)
