@@ -13,9 +13,6 @@ class TextEmbeddingModel(nn.Module):
         super(TextEmbeddingModel, self).__init__()
         self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
         self.tfidf_vectorizer = tfidf_vectorizer
-        self.hidden_size = self.model.config.hidden_size + len(
-            self.tfidf_vectorizer.get_feature_names_out()
-        )
         self.beta = nn.Parameter(torch.tensor(beta), requires_grad=True)
 
     def forward(
@@ -47,6 +44,12 @@ class TextEmbeddingModel(nn.Module):
         features = torch.cat([cls_vector, tfidf], dim=-1)
 
         return features
+
+    @property
+    def hidden_size(self):
+        return self.model.config.hidden_size + len(
+            self.tfidf_vectorizer.get_feature_names_out()
+        )
 
 
 class ClassificationHead(nn.Module):

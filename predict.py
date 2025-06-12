@@ -19,13 +19,14 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
 
 # ================== 1. 加载 BERT 特征提取器 ==================
-train_texts, _ = load_data("data/train.jsonl", lines=True)
-test_texts = load_data("data/test.jsonl", lines=True)
+texts, _ = load_data("data/train.jsonl", lines=True)
 tfidf_vectorizer = TfidfVectorizer(max_features=512)
-tfidf_vectorizer.fit(train_texts + test_texts)
+tfidf_vectorizer.fit(texts)
 
-tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
-model = DeTeCtiveClassifer("bert-large-uncased", tfidf_vectorizer, 2).to("cuda:0")
+tokenizer = AutoTokenizer.from_pretrained("/root/autodl-tmp/models/bert-large-uncased")
+model = DeTeCtiveClassifer(
+    "/root/autodl-tmp/models/bert-large-uncased", tfidf_vectorizer, 2
+).to("cuda:0")
 model.load_state_dict(torch.load("DeTeCtive_large_uncased.pth", map_location="cuda:0"))
 encoder = model.get_encoder()
 
