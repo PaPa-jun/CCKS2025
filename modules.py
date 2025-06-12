@@ -1,54 +1,90 @@
-import torch, torch.nn as nn
+import torch, torch.nn as nn, string, nltk
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from typing import List
 from transformers import AutoModel
 from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.tokenize import word_tokenize, sent_tokenize
+
+nltk.download("punkt", quiet=True)
 
 
 class TextEmbeddingModel(nn.Module):
-    def __init__(
-        self, model_name: str, tfidf_vectorizer: TfidfVectorizer, beta: float = 0.5
-    ):
+    def __init__(self, model_name: str, tfidf_vectorizer: TfidfVectorizer):
         super(TextEmbeddingModel, self).__init__()
         self.model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
         self.tfidf_vectorizer = tfidf_vectorizer
-        self.beta = nn.Parameter(torch.tensor(beta), requires_grad=True)
 
-    def forward(
-        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, raw_texts: list
-    ):
+    def _get_dl_features(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
         outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-
         cls_vector = outputs.last_hidden_state[:, 0, :]
 
-        # attention_mask_expanded = attention_mask.unsqueeze(-1).expand(
-        #     outputs.last_hidden_state.size()
-        # )
-        # mean_pooling = torch.sum(
-        #     outputs.last_hidden_state * attention_mask_expanded, dim=1
-        # ) / torch.clamp(attention_mask_expanded.sum(dim=1), min=1e-9)
-        # beta = torch.sigmoid(self.beta)
-        # bert = beta * cls_vector + (1 - beta) * mean_pooling
+        attention_mask_expanded = attention_mask.unsqueeze(-1).expand(
+            outputs.last_hidden_state.size()
+        )
+        mean_pooling = torch.sum(
+            outputs.last_hidden_state * attention_mask_expanded, dim=1
+        ) / torch.clamp(attention_mask_expanded.sum(dim=1), min=1e-9)
 
+        return torch.cat([cls_vector, mean_pooling], dim=-1)
+
+    def _get_stochastic_features(self, texts):
         tfidf = torch.tensor(
-            self.tfidf_vectorizer.transform(raw_texts).toarray(),
+            self.tfidf_vectorizer.transform(texts).toarray(),
             dtype=torch.float32,
-            device=cls_vector.device,
+            device=self.model.device,
         )
 
-        features = torch.cat([cls_vector, tfidf], dim=-1)
+        features = []
+        for text in texts:
+            sentences = sent_tokenize(text)
+            words = word_tokenize(text)
+            unique_words = set(words)
 
+            word_count = len(words)
+            sentence_lengths = [len(sent.split()) for sent in sentences]
+            avg_sentence_length_sample = (
+                sum(sentence_lengths) / len(sentence_lengths) if sentences else 0
+            )
+            text_len = len(text)
+            unique_word_count = len(unique_words)
+            lexical_diversity = unique_word_count / word_count if word_count > 0 else 0
+            punctuations = [char for char in text if char in string.punctuation]
+            punctuation_type_count = len(set(punctuations))
+
+            features.append(
+                [
+                    text_len,
+                    word_count,
+                    unique_word_count,
+                    punctuation_type_count,
+                    avg_sentence_length_sample,
+                    lexical_diversity,
+                ]
+            )
+        stocastics = F.normalize(
+            torch.tensor(features, device=self.model.device), dim=-1
+        )
+        return torch.cat([tfidf, stocastics], dim=-1)
+
+    def forward(
+        self, input_ids: torch.Tensor, attention_mask: torch.Tensor, raw_texts: list
+    ):
+        dl_features = self._get_dl_features(input_ids, attention_mask)
+        stocastic_features = self._get_stochastic_features(raw_texts)
+        features = torch.cat([dl_features, stocastic_features], dim=-1)
         return features
 
     @property
     def hidden_size(self):
-        return self.model.config.hidden_size + len(
-            self.tfidf_vectorizer.get_feature_names_out()
+        return (
+            self.model.config.hidden_size * 2
+            + len(self.tfidf_vectorizer.get_feature_names_out())
+            + 6
         )
 
 
@@ -91,19 +127,19 @@ class DeTeCtiveClassifer(nn.Module):
         encoder_name: str,
         tfidf_vectorizer,
         num_classes: int,
-        hidden_dim: int = 512,
         alpha: float = 0.5,
         beta: float = 0.5,
         temperature: float = 0.07,
     ):
         super(DeTeCtiveClassifer, self).__init__()
-        self.encoder = TextEmbeddingModel(encoder_name, tfidf_vectorizer, beta)
+        self.encoder = TextEmbeddingModel(encoder_name, tfidf_vectorizer)
         self.classifier = ClassificationHead(
             input_dim=self.encoder.hidden_size,
             output_dim=num_classes,
-            hidden_dim=hidden_dim,
+            hidden_dim=self.encoder.hidden_size // 2,
         )
         self.alpha = nn.Parameter(torch.tensor(alpha), requires_grad=False)
+        self.beta = nn.Parameter(torch.tensor(beta), requires_grad=False)
         self.temperature = nn.Parameter(torch.tensor(temperature), requires_grad=False)
         self.epsilon = torch.tensor(1e-6)
 
@@ -136,9 +172,7 @@ class DeTeCtiveClassifer(nn.Module):
         logits = self.classifier(querys)
         classification_loss = F.cross_entropy(logits, labels)
 
-        alpha = torch.sigmoid(self.alpha)
-
-        return alpha * constructive_loss + (1 - alpha) * classification_loss, logits
+        return self.alpha * constructive_loss + self.beta * classification_loss, logits
 
     def get_encoder(self):
         """
