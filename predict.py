@@ -19,27 +19,28 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
 
 # ================== 1. 加载 BERT 特征提取器 ==================
-texts, labels = load_data("data/train.jsonl", lines=True, ratio=0.01)
+train_texts, _ = load_data("data/train.jsonl", lines=True)
+test_texts = load_data("data/test.jsonl", lines=True)
 tfidf_vectorizer = TfidfVectorizer(max_features=512)
-tfidf_vectorizer.fit(texts)
+tfidf_vectorizer.fit(train_texts + test_texts)
+
 tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased")
 model = DeTeCtiveClassifer("bert-large-uncased", tfidf_vectorizer, 2).to("cuda:0")
 model.load_state_dict(torch.load("DeTeCtive_large_uncased.pth", map_location="cuda:0"))
 encoder = model.get_encoder()
 
-# ================== 2. 特征提取 ==================
-X_train = get_features(texts, encoder, tokenizer, batch_size=32)
-torch.cuda.empty_cache()
-y_train = np.array(labels)
 
-# 划分训练集和验证集
-X_train, X_val, y_train, y_val = train_test_split(
-    X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
-)
+# ================== 2. 定义数据加载函数 ==================
+def get_train_data(ratio: float = 0.01):
+    sub_texts, sub_labels = load_data("data/train.jsonl", lines=True, ratio=ratio)
+    X_train = get_features(sub_texts, encoder, tokenizer, batch_size=32)
+    torch.cuda.empty_cache()
+    y_train = np.array(sub_labels)
+    return X_train, y_train
 
 
 # ================== 3. 定义模型调参函数 ==================
-def tune_model(model, param_grid, name, n_jobs=1):
+def tune_model(model, X, y, param_grid, name, n_jobs=1):
     grid_search = GridSearchCV(
         estimator=model,
         param_grid=param_grid,
@@ -48,22 +49,22 @@ def tune_model(model, param_grid, name, n_jobs=1):
         n_jobs=n_jobs,
         verbose=3,
     )
-    grid_search.fit(X_train, y_train)
+    grid_search.fit(X, y)
     print(f"Best {name} parameters:", grid_search.best_params_)
     print(f"Best {name} F1 Score: {grid_search.best_score_:.4f}")
     return grid_search.best_estimator_
 
 
 # ================== 4. 独立调参各模型 ==================
-
 # 随机森林
 rf_params = {
     "n_estimators": [100, 200],
     "max_depth": [None, 3, 5],
     "min_samples_split": [2, 5],
 }
+X, y = get_train_data(0.01)
 rf_best = tune_model(
-    RandomForestClassifier(random_state=42), rf_params, "rf", n_jobs=-1
+    RandomForestClassifier(random_state=42), X, y, rf_params, "rf", n_jobs=-1
 )
 torch.cuda.empty_cache()
 
@@ -74,8 +75,11 @@ xgb_params = {
     "learning_rate": [0.1, 0.01],
     "subsample": [0.7, 0.8],
 }
+X, y = get_train_data(0.01)
 xgb_best = tune_model(
     XGBClassifier(eval_metric="logloss", device="cuda"),
+    X,
+    y,
     xgb_params,
     "xgb",
     n_jobs=10,
@@ -88,6 +92,7 @@ svm_params = {
     "clf__max_iter": [500, 1000, 2000],
     "clf__penalty": ["l2", "elasticnet"],
 }
+X, y = get_train_data(0.01)
 svm_best = tune_model(
     Pipeline(
         [
@@ -95,6 +100,8 @@ svm_best = tune_model(
             ("clf", SGDClassifier(loss="hinge", penalty="l2", random_state=42)),
         ]
     ),
+    X,
+    y,
     svm_params,
     "svm",
     n_jobs=-1,
@@ -110,7 +117,7 @@ knn_params = {
     ],
     "decomp__n_components": [0.8, 0.9, 0.95],
 }
-
+X, y = get_train_data(0.01)
 knn_best = tune_model(
     Pipeline(
         [
@@ -119,6 +126,8 @@ knn_best = tune_model(
             ("clf", KNeighborsClassifier(algorithm="auto", metric="cosine")),
         ]
     ),
+    X,
+    y,
     knn_params,
     "knn",
     n_jobs=-1,
@@ -147,6 +156,8 @@ grid_search_stacking = GridSearchCV(
     verbose=3,
 )
 
+X, y = get_train_data(0.01)
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 grid_search_stacking.fit(X_train, y_train)
 torch.cuda.empty_cache()
 

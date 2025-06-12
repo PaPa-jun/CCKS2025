@@ -38,7 +38,7 @@ dataloader = DataLoader(dataset, batch_size=16, sampler=sampler)
 dataloader = fabric.setup_dataloaders(dataloader)
 fabric.barrier()
 
-for epoch in range(5):
+for epoch in range(10):
     model.train()
     total_loss = 0.0
     for batch in tqdm(
