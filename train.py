@@ -26,8 +26,8 @@ tfidf_vectorizer = TfidfVectorizer(max_features=512)
 tfidf_vectorizer.fit(texts)
 fabric.barrier()
 
-tokenizer = AutoTokenizer.from_pretrained("../bert-large-uncased")
-model = DeTeCtiveClassifer("../bert-large-uncased", tfidf_vectorizer, num_classes=2)
+tokenizer = AutoTokenizer.from_pretrained("bert-large-base")
+model = DeTeCtiveClassifer("bert-large-base", tfidf_vectorizer, num_classes=2)
 optimizer = optim.AdamW(model.parameters(), lr=5e-5)
 model, optimizer = fabric.setup(model, optimizer)
 fabric.barrier()
@@ -58,11 +58,11 @@ for epoch in range(5):
 
     all_loss = fabric.all_gather(total_loss)
     fabric.print(
-        f"Epoch {epoch + 1}, Loss: {all_loss.sum() / (len(dataloader) * fabric.world_size)}"
+        f"Epoch {epoch + 1}, Loss: {all_loss.sum() / (len(dataloader) * fabric.world_size):.4f}"
     )
     torch.cuda.empty_cache()
     fabric.barrier()
 
 if fabric.global_rank == 0:
-    torch.save(model.state_dict(), "DeTeCtive_large_uncased.pth")
+    torch.save(model.state_dict(), "DeTeCtive.pth")
 fabric.barrier()

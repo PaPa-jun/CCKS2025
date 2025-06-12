@@ -19,7 +19,6 @@ class TextEmbeddingModel(nn.Module):
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-        cls_vector = outputs.last_hidden_state[:, 0, :]
 
         attention_mask_expanded = attention_mask.unsqueeze(-1).expand(
             outputs.last_hidden_state.size()
@@ -28,7 +27,7 @@ class TextEmbeddingModel(nn.Module):
             outputs.last_hidden_state * attention_mask_expanded, dim=1
         ) / torch.clamp(attention_mask_expanded.sum(dim=1), min=1e-9)
 
-        return torch.cat([cls_vector, mean_pooling], dim=-1)
+        return mean_pooling
 
     def _get_stochastic_features(self, texts):
         tfidf = torch.tensor(
@@ -80,7 +79,7 @@ class TextEmbeddingModel(nn.Module):
     @property
     def hidden_size(self):
         return (
-            self.model.config.hidden_size * 2
+            self.model.config.hidden_size
             + len(self.tfidf_vectorizer.get_feature_names_out())
             + 6
         )

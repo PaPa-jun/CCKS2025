@@ -1,6 +1,4 @@
 **/.Ds_Store
 **/__pycache__/**
 **.pth
-submit**.**
-**/finetuned_tokenizer/**
-database/**
+submit**.txt
