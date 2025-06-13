@@ -1,4 +1,4 @@
-import torch, torch.nn as nn, string, nltk
+import torch, torch.nn as nn, string
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from typing import List

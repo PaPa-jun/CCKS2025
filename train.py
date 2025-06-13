@@ -11,7 +11,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 torch.set_float32_matmul_precision("medium")
 fabric = Fabric(
     accelerator="cuda",
-    devices=[0, 1, 2, 3],
+    devices=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
     strategy="ddp_find_unused_parameters_true",
     precision="16-mixed",
 )
@@ -26,8 +26,8 @@ tfidf_vectorizer = TfidfVectorizer(max_features=512)
 tfidf_vectorizer.fit(texts)
 fabric.barrier()
 
-tokenizer = AutoTokenizer.from_pretrained("bert-large-base")
-model = DeTeCtiveClassifer("bert-large-base", tfidf_vectorizer, num_classes=2)
+tokenizer = AutoTokenizer.from_pretrained("../models/bert-large-uncased")
+model = DeTeCtiveClassifer("../models/bert-large-uncased", tfidf_vectorizer, num_classes=2)
 optimizer = optim.AdamW(model.parameters(), lr=5e-5)
 model, optimizer = fabric.setup(model, optimizer)
 fabric.barrier()
