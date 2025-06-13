@@ -34,15 +34,15 @@ DeTeCtive 是一种用于检测 AI 生成文本的新型框架，其核心思想
 本仓库文件结构如下：
 ```
 .
-├── data                # 数据集文件夹
-│   ├── test.jsonl      # 测试集
-│   └── train.jsonl     # 训练集
-├── en_predict.py       # 集成学习预测脚本
-├── knn_predict.py      # KNN 预测脚本
-├── modules.py          # 类模块定义
-├── README.md
-├── train.py            # 训练脚本
-└── utils.py            # 工具函数
+├── data                # 数据集
+│   ├── test.jsonl      # 训练集
+│   └── train.jsonl     # 测试集
+├── modules.py          # 模块定义
+├── predict.py          # 预测并生成提交文件
+├── README.md           # 说明文档
+├── requirements.txt    # 依赖
+├── train.py            # 训练函数
+└── utils.py            # 工具包
 ```
 
 ## 实验日志
@@ -53,4 +53,33 @@ DeTeCtive 是一种用于检测 AI 生成文本的新型框架，其核心思想
 - [6月7日] 完成了 KNN 的预测框架，结果并不如预期的好，分数在 81 分左右。
 - [6月10日] 优化代码框架，支持单机多卡分布式训练。
 - [6月11日] 放弃 Bagging 预测器，用 0.01 的训练集训练分类器，达到 88.66 分！！！
-- [6月12日] 加入 tf/idf 等特征工程特征，基本完成代码框架。
+- [6月12日] 加入 tf/idf 等统计学特征，基本完成代码框架。
+- [6月13日] 完成实验报告撰写工作，通过调参达到 89.90 分。
+
+## 运行
+
+创建虚拟环境
+```sh
+conda create -n ccks python=3.10
+conda activate ccks
+```
+
+安装依赖
+```sh
+pip install -r requirements.txt
+```
+
+全局安装 `nltk tokenizer` 文本处理包
+```sh
+sudo python -m nltk.downloader punkt_tab
+```
+
+修改环境配置：包括路径、训练设备等。运行训练函数
+```sh
+python train.py
+```
+
+预测并生成提交文件
+```sh
+python predict.py
+```
